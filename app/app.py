@@ -177,3 +177,76 @@ with tab3:
         * **行動：** 推出「組合包」或是將兩者陳列在一起。
         """
         st.info(strategy_text)
+with tab4: # 假設這是新分頁
+    st.header("💰 價格彈性與獲利模擬 (Price Elasticity)")
+    st.markdown("模擬 **價格變動** 對 **需求量** 的影響，尋找獲利最大化的甜蜜點。")
+
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("參數設定")
+        base_price = st.number_input("目前售價 (€)", 1.0, 100.0, 10.0)
+        base_cost = st.number_input("商品成本 (€)", 0.5, 50.0, 6.0)
+        base_demand = st.number_input("目前日銷量", 10, 1000, 100)
+        
+        # 彈性係數：-2.0 代表漲價 1%，銷量掉 2% (對價格敏感)
+        elasticity = st.slider("價格彈性係數 (Elasticity)", -3.0, -0.1, -1.5, step=0.1,
+                               help="絕對值越大，代表客戶對價格越敏感（一漲價就跑）。")
+
+    with col2:
+        # 模擬價格從 -20% 到 +20% 的變化
+        price_change_pct = np.linspace(-0.2, 0.2, 50)
+        sim_prices = base_price * (1 + price_change_pct)
+        
+        # 需求公式：Q_new = Q_old * (1 + Elasticity * %Price_Change)
+        sim_demand = base_demand * (1 + elasticity * price_change_pct)
+        
+        # 獲利公式：Profit = (Price - Cost) * Demand
+        sim_profit = (sim_prices - base_cost) * sim_demand
+        
+        # 找出最大獲利點
+        max_profit_idx = np.argmax(sim_profit)
+        best_price = sim_prices[max_profit_idx]
+        best_profit = sim_profit[max_profit_idx]
+        
+        st.metric("建議最佳售價", f"€{best_price:.2f}", delta=f"{(best_price-base_price)/base_price:.1%}")
+        st.metric("預估最大獲利", f"€{best_profit:.1f}")
+
+        # 畫圖
+        df_sim = pd.DataFrame({
+            'Price': sim_prices,
+            'Profit': sim_profit,
+            'Demand': sim_demand
+        })
+        
+        fig = px.line(df_sim, x='Price', y=['Profit', 'Demand'], markers=True, 
+                      title="價格 vs. 獲利/需求 敏感度分析")
+        fig.add_vline(x=best_price, line_dash="dash", line_color="green", annotation_text="最佳定價")
+        st.plotly_chart(fig, use_container_width=True)
+with tab5: # 假設這是另一個新分頁
+    st.header("🗺️ 客戶地理分佈 (Geospatial Insights)")
+    st.markdown("分析 Heilbronn 地區的客戶密度，優化 **門市選址** 與 **物流配送**。")
+
+    # 模擬數據：生成 Heilbronn 附近的座標 (緯度 49.14, 經度 9.21)
+    @st.cache_data
+    def load_geo_data():
+        n_points = 500
+        # 在 Heilbronn 中心點附近隨機生成
+        lat = np.random.normal(49.1427, 0.02, n_points)
+        lon = np.random.normal(9.2109, 0.02, n_points)
+        return pd.DataFrame({'lat': lat, 'lon': lon})
+
+    df_map = load_geo_data()
+
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        # 簡單的地圖
+        st.map(df_map)
+    
+    with col2:
+        st.info("💡 **商業洞察：**")
+        st.markdown("""
+        * **熱區發現：** 客戶高度集中在市中心東北側。
+        * **行動建議：** 建議在該區域增設 **Lidl Connect 取貨點** 或做為 **生鮮快送 (Quick Commerce)** 的前置倉 (Dark Store)。
+        """)
