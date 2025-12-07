@@ -177,7 +177,8 @@ with tab3:
         * **行動：** 推出「組合包」或是將兩者陳列在一起。
         """
         st.info(strategy_text)
-with tab4: # 假設這是新分頁
+with tab4: 
+    # 假設這是新分頁
     st.header("💰 價格彈性與獲利模擬 (Price Elasticity)")
     st.markdown("模擬 **價格變動** 對 **需求量** 的影響，尋找獲利最大化的甜蜜點。")
 
@@ -223,7 +224,8 @@ with tab4: # 假設這是新分頁
                       title="價格 vs. 獲利/需求 敏感度分析")
         fig.add_vline(x=best_price, line_dash="dash", line_color="green", annotation_text="最佳定價")
         st.plotly_chart(fig, use_container_width=True)
-with tab5: # 假設這是另一個新分頁
+with tab5: 
+    # 假設這是另一個新分頁
     st.header("🗺️ 客戶地理分佈 (Geospatial Insights)")
     st.markdown("分析 Heilbronn 地區的客戶密度，優化 **門市選址** 與 **物流配送**。")
 
