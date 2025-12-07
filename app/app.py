@@ -160,7 +160,7 @@ with tab3:
     
     # --- 自動生成策略建議 (Auto-Strategy) ---
     st.markdown("---")
-    st.subheader("💡 AI 策略建議 (Actionable Insight)")
+    st.subheader("💡策略建議 (Actionable Insight)")
     
     if rule['profit_driver'] < rule['profit_target']:
         strategy_text = f"""
