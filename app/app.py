@@ -4,257 +4,333 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
-# --- 1. 頁面設定 ---
-st.set_page_config(page_title="Lidl 門市中控台", layout="wide")
-st.title("🛒 Lidl Store Operation Center")
+# =========================
+# 1) Page setup
+# =========================
+st.set_page_config(page_title="Retail Store 門市中控台", layout="wide")
+st.title("🛒 Retail Store Operation Center")
 st.markdown("### 全通路零售決策系統 (Omnichannel Retail Decision System)")
-st.info("整合 **CRM (客群)**、**Supply Chain (庫存)** 與 **Profit Strategy (獲利)** 的三合一戰情室。")
+st.info("整合 **CRM (客群)**、**Supply Chain (庫存)** 與 **Profit Strategy (獲利)** 的三合一零售戰情室。")
 
-# 建立三個分頁
-# --- 關鍵修正：這裡要定義 5 個變數 (加入 tab5) ---
+# Tabs
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "👥 客戶精準行銷 (RFM)", 
-    "📦 智慧庫存預測 (Inventory)", 
-    "🧺 購物籃獲利策略 (Basket)", 
+    "👥 客戶精準行銷 (RFM)",
+    "📦 需求預測與補貨 (Inventory)",
+    "🧺 購物籃獲利策略 (Basket)",
     "💰 智慧定價模擬 (Pricing)",
-    "🗺️ 客戶地理分佈 (Location)"  # 新增這個！
+    "🗺️ 客戶地理分佈 (Location)"
 ])
-# ==========================================
-# 分頁 1: CRM 設定 (RFM)
-# ==========================================
+
+# =========================
+# Tab 1: CRM (RFM)
+# =========================
 with tab1:
-    st.header("👥 客戶分群與挽回策略")
-    
-    # 模擬數據
+    st.header("👥 客戶分群與挽回策略 (RFM)")
+
     @st.cache_data
-    def load_rfm_data():
-        np.random.seed(42)
-        data = pd.DataFrame({
-            'CustomerID': range(1000, 2000),
-            'Recency': np.random.randint(1, 100, 1000),
-            'Monetary': np.random.randint(50, 5000, 1000)
+    def load_rfm_data(n=1000, seed=42):
+        np.random.seed(seed)
+        df = pd.DataFrame({
+            "CustomerID": range(1000, 1000 + n),
+            "Recency": np.random.randint(1, 120, n),          # days since last purchase
+            "Frequency": np.random.randint(1, 25, n),         # purchase count
+            "Monetary": np.random.randint(20, 6000, n)        # total spend (€)
         })
-        return data
+        return df
 
     df_rfm = load_rfm_data()
-    
+
     col1, col2 = st.columns([1, 3])
-    
+
     with col1:
         st.subheader("參數設定")
-        vip_threshold = st.slider("🏆 VIP 金額門檻 (€)", 1000, 5000, 3000)
-        risk_threshold = st.slider("⚠️ 流失天數門檻 (Days)", 30, 120, 60)
-    
+        vip_m_threshold = st.slider("🏆 VIP 金額門檻 Monetary (€)", 500, 6000, 3000, step=100)
+        vip_f_threshold = st.slider("🏆 VIP 次數門檻 Frequency", 1, 25, 10)
+        risk_recency = st.slider("⚠️ 流失天數門檻 Recency (Days)", 15, 120, 60)
+        risk_value_floor = st.slider("⚠️ 流失預警最低價值 (€)", 0, 6000, 800, step=100)
+
+        with st.expander("Methodology & assumptions"):
+            st.markdown(
+                "- 這裡的 R/F/M 目前為**示範用模擬資料**。\n"
+                "- VIP：Monetary 高 且 Frequency 高。\n"
+                "- At Risk：Recency 高 且（Monetary 或 Frequency）不低，避免把低價值客戶誤判為需挽回對象。"
+            )
+
     with col2:
-        # 動態分群
         def segment(row):
-            if row['Monetary'] >= vip_threshold: return 'VIP'
-            if row['Recency'] >= risk_threshold: return 'At Risk'
-            return 'Standard'
-        
-        df_rfm['Segment'] = df_rfm.apply(segment, axis=1)
-        
-        # 顯示 KPI
-        risk_users = df_rfm[df_rfm['Segment']=='At Risk']
-        risk_value = risk_users['Monetary'].sum()
-        
-        m1, m2, m3 = st.columns(3)
-        m1.metric("VIP 人數", f"{len(df_rfm[df_rfm['Segment']=='VIP'])} 人")
-        m2.metric("流失預警人數", f"{len(risk_users)} 人", delta="-需挽回", delta_color="inverse")
+            if (row["Monetary"] >= vip_m_threshold) and (row["Frequency"] >= vip_f_threshold):
+                return "VIP"
+            if (row["Recency"] >= risk_recency) and (row["Monetary"] >= risk_value_floor):
+                return "At Risk"
+            return "Standard"
+
+        df_rfm["Segment"] = df_rfm.apply(segment, axis=1)
+
+        risk_users = df_rfm[df_rfm["Segment"] == "At Risk"]
+        vip_users = df_rfm[df_rfm["Segment"] == "VIP"]
+        risk_value = risk_users["Monetary"].sum()
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("VIP 人數", f"{len(vip_users)} 人")
+        m2.metric("流失預警人數", f"{len(risk_users)} 人", delta="需挽回", delta_color="inverse")
         m3.metric("潛在流失金額", f"€{risk_value:,.0f}")
-        
-        # 畫圖
-        fig = px.scatter(df_rfm, x='Recency', y='Monetary', color='Segment', 
-                         title="RFM 客戶價值分佈圖", color_discrete_map={'VIP':'green', 'At Risk':'red', 'Standard':'blue'})
+        m4.metric("At Risk 平均 Frequency", f"{risk_users['Frequency'].mean():.1f}")
+
+        fig = px.scatter(
+            df_rfm,
+            x="Recency", y="Monetary",
+            size="Frequency",
+            color="Segment",
+            title="RFM 客戶價值分佈圖（點越大=購買越頻繁）",
+            hover_data=["CustomerID", "Recency", "Frequency", "Monetary"]
+        )
         st.plotly_chart(fig, use_container_width=True)
 
-# ==========================================
-# 分頁 2: 供應鏈設定 (Inventory)
-# ==========================================
+        st.markdown("---")
+        st.subheader("💡 Actionable Insight")
+        st.success(
+            f"建議針對 **At Risk（{len(risk_users)} 人）** 啟動 Win-back campaign（限時券/回購禮）。\n\n"
+            f"可先用小規模 A/B test 驗證：例如 10% 抽樣投放 → 觀察回購率、客單、毛利是否顯著提升。"
+        )
+
+# =========================
+# Tab 2: Inventory (Forecast & Ordering)
+# =========================
 with tab2:
-    st.header("📦 Prophet 動態庫存調節")
-    
-    # 模擬預測數據
-    dates = pd.date_range(start='2026-01-01', periods=30)
-    base_demand = 100
-    demand = [int(base_demand * (1.4 if d.dayofweek >= 5 else 1.0) + np.random.randint(-10, 10)) for d in dates]
-    df_inv = pd.DataFrame({'Date': dates, 'Forecast': demand})
-    
+    st.header("📦 需求預測與動態補貨 (Forecast & Ordering)")
+
+    @st.cache_data
+    def load_forecast_data(start="2026-01-01", periods=30, seed=7):
+        np.random.seed(seed)
+        dates = pd.date_range(start=start, periods=periods)
+        base = 100
+        # demo seasonality: weekend higher
+        forecast = [
+            int(base * (1.35 if d.dayofweek >= 5 else 1.0) + np.random.randint(-12, 12))
+            for d in dates
+        ]
+        return pd.DataFrame({"Date": dates, "Forecast": forecast})
+
+    df_inv = load_forecast_data()
+
     col1, col2 = st.columns([1, 3])
-    
+
     with col1:
         st.subheader("供應鏈參數")
-        safety_buffer = st.slider("🛡️ 安全庫存係數 (%)", 0, 50, 10)
-        unit_cost = st.number_input("進貨成本 (€)", 0.5)
-        
+        buffer_pct = st.slider("🛡️ 訂貨偏差 (Buffer %)", -20, 50, 10,
+                               help="正數=多訂以避免缺貨；負數=少訂以降低報廢風險。")
+        unit_cost = st.number_input("進貨成本 (€/unit)", min_value=0.0, value=0.5, step=0.1)
+        overstock_loss_rate = st.slider("🥬 過量訂貨損失率 (%)", 0, 100, 60,
+                                        help="多訂不等於全報廢；可視為折價/報廢/耗損比例。")
+        lost_margin = st.number_input("🚫 缺貨損失（毛利）(€/unit)", min_value=0.0, value=0.8, step=0.1)
+
+        with st.expander("Methodology & assumptions"):
+            st.markdown(
+                "- 目前 Forecast 為**示範用季節性模擬**（週末需求較高）。\n"
+                "- 你可把 Forecast 替換成 Prophet/ARIMA/ML 預測輸出。\n"
+                "- 成本估算：\n"
+                "  - 過量：overstock_units × unit_cost × loss_rate\n"
+                "  - 缺貨：understock_units × lost_margin（用毛利近似缺貨損失）"
+            )
+
     with col2:
-        df_inv['Order_Qty'] = df_inv['Forecast'] * (1 + safety_buffer/100)
-        waste_cost = ((df_inv['Order_Qty'] - df_inv['Forecast']) * unit_cost).sum()
-        
-        m1, m2 = st.columns(2)
-        m1.metric("建議總訂貨量", f"{int(df_inv['Order_Qty'].sum())}", delta=f"+{safety_buffer}% Buffer")
-        m2.metric("預估報廢成本 (保險費)", f"€{waste_cost:,.0f}", delta_color="inverse")
-        
+        df_inv["Order_Qty"] = df_inv["Forecast"] * (1 + buffer_pct / 100)
+
+        # costs
+        overstock_units = np.maximum(df_inv["Order_Qty"] - df_inv["Forecast"], 0)
+        understock_units = np.maximum(df_inv["Forecast"] - df_inv["Order_Qty"], 0)
+
+        overstock_cost = (overstock_units * unit_cost * (overstock_loss_rate / 100)).sum()
+        stockout_cost = (understock_units * lost_margin).sum()
+        total_cost = overstock_cost + stockout_cost
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("建議總訂貨量", f"{int(df_inv['Order_Qty'].sum()):,}", delta=f"{buffer_pct:+d}% vs forecast")
+        m2.metric("過量成本（折價/報廢）", f"€{overstock_cost:,.0f}", delta_color="inverse")
+        m3.metric("缺貨損失（毛利）", f"€{stockout_cost:,.0f}", delta_color="inverse")
+
+        st.caption(f"Total risk cost (Overstock + Stockout) ≈ €{total_cost:,.0f}")
+
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df_inv['Date'], y=df_inv['Forecast'], name='AI 預測需求'))
-        fig.add_trace(go.Scatter(x=df_inv['Date'], y=df_inv['Order_Qty'], name='建議訂貨量', line=dict(dash='dash')))
+        fig.add_trace(go.Scatter(x=df_inv["Date"], y=df_inv["Forecast"], name="需求預測（Forecast）"))
+        fig.add_trace(go.Scatter(x=df_inv["Date"], y=df_inv["Order_Qty"], name="建議訂貨量（Order）",
+                                 line=dict(dash="dash")))
+        fig.update_layout(title="Forecast vs Ordering Plan")
         st.plotly_chart(fig, use_container_width=True)
 
-# ==========================================
-# 分頁 3: 購物籃獲利策略 (Basket Analysis) - NEW!
-# ==========================================
+        st.markdown("---")
+        st.subheader("💡 Actionable Insight")
+        st.info(
+            "你可以把 Buffer 當成「服務水準 vs 報廢」的旋鈕：\n"
+            "- 想降低缺貨：提高 Buffer（但過量成本上升）\n"
+            "- 想降低報廢：降低 Buffer（但缺貨損失可能上升）\n\n"
+            "面試時一句話：**我把補貨決策變成可調參的風險成本最小化問題。**"
+        )
+
+# =========================
+# Tab 3: Basket (Association Rules)
+# =========================
 with tab3:
     st.header("🧺 購物籃交叉銷售策略 (Cross-Selling Strategy)")
     st.markdown("利用 **關聯規則 (Association Rules)** 找出「帶路雞」，以低毛利商品帶動高毛利營收。")
-    
+
     col_ui, col_kpi = st.columns([1, 2])
-    
+
+    # demo rules DB (consistent units: €/unit margin)
+    rules_db = {
+        "Beer 🍺":    {"target": "Chips 🥔",   "support": 0.08, "confidence": 0.62, "lift": 5.0, "driver_margin": 0.10, "target_margin": 0.70, "desc": "週末狂歡組合"},
+        "Milk 🥛":    {"target": "Bread 🍞",   "support": 0.12, "confidence": 0.41, "lift": 1.8, "driver_margin": 0.05, "target_margin": 0.35, "desc": "每日早餐剛需"},
+        "Diapers 👶": {"target": "Beer 🍺",    "support": 0.03, "confidence": 0.28, "lift": 3.5, "driver_margin": 2.00, "target_margin": 0.10, "desc": "新手爸媽關聯購買"}
+    }
+
     with col_ui:
         st.subheader("🔍 選擇帶路雞商品 (Driver)")
-        
-        # 這裡模擬你算出來的規則
-        rules_db = {
-            'Beer 🍺': {
-                'target': 'Chips 🥔',
-                'lift': 5.0,
-                'profit_driver': 0.10,  # 啤酒利潤
-                'profit_target': 0.70,  # 洋芋片利潤
-                'desc': '週末狂歡組合'
-            },
-            'Milk 🥛': {
-                'target': 'Bread 🍞',
-                'lift': 1.8,
-                'profit_driver': 0.05,
-                'profit_target': 0.35,
-                'desc': '每日早餐剛需'
-            },
-            'Diapers 👶': {
-                'target': 'Beer 🍺',
-                'lift': 3.5,
-                'profit_driver': 2.00,
-                'profit_target': 0.50,
-                'desc': '新手爸爸組合'
-            }
-        }
-        
         selected_item = st.selectbox("請選擇促銷商品：", list(rules_db.keys()))
         rule = rules_db[selected_item]
-        
+
+        with st.expander("Methodology & assumptions"):
+            st.markdown(
+                "- 這裡的 association rules 為**示範用數值**。\n"
+                "- Support/Confidence/Lift 在正式版應由交易資料計算。\n"
+                "- Margin 統一用 **€/unit（每件毛利）**。"
+            )
+
     with col_kpi:
-        # 計算數據
-        total_profit = rule['profit_driver'] + rule['profit_target']
-        profit_boost = (rule['profit_target'] / rule['profit_driver']) * 100
-        
-        st.subheader(f"📊 分析結果：{rule['desc']}")
-        
-        # 顯示 3 個大指標
-        k1, k2, k3 = st.columns(3)
-        k1.metric("關聯商品 (Target)", rule['target'])
-        k2.metric("提升度 (Lift)", f"{rule['lift']}x", delta="極強關聯")
-        k3.metric("組合總利潤", f"€{total_profit:.2f}", delta=f"+{profit_boost:.0f}% vs 單賣")
-        
-        # 畫一個簡單的利潤構成圖
+        total_margin = rule["driver_margin"] + rule["target_margin"]
+
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("關聯商品 (Target)", rule["target"])
+        k2.metric("Support", f"{rule['support']:.0%}")
+        k3.metric("Confidence", f"{rule['confidence']:.0%}")
+        k4.metric("Lift", f"{rule['lift']:.1f}x")
+
+        st.metric("組合毛利（€/basket）", f"€{total_margin:.2f}")
+
         profit_data = pd.DataFrame({
-            'Product': ['Driver (帶路雞)', 'Target (被帶動)'],
-            'Profit': [rule['profit_driver'], rule['profit_target']],
-            'Color': ['#bdc3c7', '#27ae60'] # 灰色是低毛利，綠色是高毛利
+            "Product": ["Driver (帶路雞)", "Target (被帶動)"],
+            "Margin €/unit": [rule["driver_margin"], rule["target_margin"]],
         })
-        fig_bar = px.bar(profit_data, x='Product', y='Profit', color='Product', 
-                         title="單品利潤貢獻比較 (Profit Contribution)",
-                         color_discrete_sequence=['#7f8c8d', '#2ecc71'])
+        fig_bar = px.bar(
+            profit_data,
+            x="Product", y="Margin €/unit",
+            color="Product",
+            title="單品毛利貢獻比較 (Margin Contribution)"
+        )
         st.plotly_chart(fig_bar, use_container_width=True)
-    
-    # --- 自動生成策略建議 (Auto-Strategy) ---
+
     st.markdown("---")
-    st.subheader("💡策略建議 (Actionable Insight)")
-    
-    if rule['profit_driver'] < rule['profit_target']:
-        strategy_text = f"""
-        **建議策略：Loss Leader Strategy (帶路雞策略)**
-        * **洞察：** {selected_item} 的利潤極低 (€{rule['profit_driver']})，但它是 {rule['target']} 的強力流量入口 (Lift: {rule['lift']})。
-        * **行動：** 建議對 {selected_item} 進行 **降價促銷** 甚至成本價販售，吸引客流。
-        * **預期結果：** 雖然 {selected_item} 不賺錢，但每賣出一個，有高機率連帶銷售高毛利的 {rule['target']} (€{rule['profit_target']})，使整體購物籃獲利最大化。
-        """
-        st.success(strategy_text)
+    st.subheader("💡 策略建議 (Actionable Insight)")
+
+    if rule["driver_margin"] < rule["target_margin"]:
+        st.success(
+            f"**Loss Leader Strategy（帶路雞策略）**\n\n"
+            f"- 洞察：{selected_item} 毛利較低，但能有效帶動 {rule['target']}（Lift {rule['lift']:.1f}x）。\n"
+            f"- 行動：對 {selected_item} 做限時促銷／前段陳列，提升曝光與進店轉化。\n"
+            f"- 目標：提高 **整體購物籃毛利**（用高毛利品 {rule['target']} 來補回）。"
+        )
     else:
-        strategy_text = f"""
-        **建議策略：Bundle Strategy (強強聯手)**
-        * **洞察：** 兩者皆為高利潤商品，且關聯度高。
-        * **行動：** 推出「組合包」或是將兩者陳列在一起。
-        """
-        st.info(strategy_text)
-with tab4: 
-    # 假設這是新分頁
+        st.info(
+            f"**Bundle Strategy（組合策略）**\n\n"
+            f"- 洞察：兩者皆具不錯毛利，且關聯度高。\n"
+            f"- 行動：推出 bundle、同區陳列、或第二件折扣，提升客單價。"
+        )
+
+# =========================
+# Tab 4: Pricing (Elasticity)
+# =========================
+with tab4:
     st.header("💰 價格彈性與獲利模擬 (Price Elasticity)")
     st.markdown("模擬 **價格變動** 對 **需求量** 的影響，尋找獲利最大化的甜蜜點。")
 
     col1, col2 = st.columns(2)
-    
+
     with col1:
         st.subheader("參數設定")
-        base_price = st.number_input("目前售價 (€)", 1.0, 100.0, 10.0)
-        base_cost = st.number_input("商品成本 (€)", 0.5, 50.0, 6.0)
-        base_demand = st.number_input("目前日銷量", 10, 1000, 100)
-        
-        # 彈性係數：-2.0 代表漲價 1%，銷量掉 2% (對價格敏感)
-        elasticity = st.slider("價格彈性係數 (Elasticity)", -3.0, -0.1, -1.5, step=0.1,
-                               help="絕對值越大，代表客戶對價格越敏感（一漲價就跑）。")
+        base_price = st.number_input("目前售價 P0 (€)", 0.1, 500.0, 10.0, step=0.5)
+        base_cost = st.number_input("商品成本 C (€)", 0.0, 499.0, 6.0, step=0.5)
+        base_demand = st.number_input("目前日銷量 Q0", 1, 100000, 100, step=10)
+
+        # Constant elasticity demand: Q = Q0 * (P/P0)^e, e < 0
+        elasticity = st.slider(
+            "價格彈性係數 e（負值）",
+            -5.0, -0.1, -1.5, step=0.1,
+            help="e 絕對值越大 → 價格越敏感；使用常彈性模型避免需求變成負數。"
+        )
+
+        with st.expander("Methodology & assumptions"):
+            st.markdown(
+                "- 需求模型：**Q = Q0 × (P/P0)^e**（常彈性模型，e < 0）。\n"
+                "- 獲利：**(P - C) × Q**。\n"
+                "- 若成本 ≥ 售價，獲利可能為負，屬正常提醒。"
+            )
 
     with col2:
-        # 模擬價格從 -20% 到 +20% 的變化
-        price_change_pct = np.linspace(-0.2, 0.2, 50)
+        price_change_pct = np.linspace(-0.2, 0.2, 60)
         sim_prices = base_price * (1 + price_change_pct)
-        
-        # 需求公式：Q_new = Q_old * (1 + Elasticity * %Price_Change)
-        sim_demand = base_demand * (1 + elasticity * price_change_pct)
-        
-        # 獲利公式：Profit = (Price - Cost) * Demand
+
+        # constant elasticity demand
+        sim_demand = base_demand * (sim_prices / base_price) ** (elasticity)
+
         sim_profit = (sim_prices - base_cost) * sim_demand
-        
-        # 找出最大獲利點
-        max_profit_idx = np.argmax(sim_profit)
-        best_price = sim_prices[max_profit_idx]
-        best_profit = sim_profit[max_profit_idx]
-        
-        st.metric("建議最佳售價", f"€{best_price:.2f}", delta=f"{(best_price-base_price)/base_price:.1%}")
-        st.metric("預估最大獲利", f"€{best_profit:.1f}")
 
-        # 畫圖
-        df_sim = pd.DataFrame({
-            'Price': sim_prices,
-            'Profit': sim_profit,
-            'Demand': sim_demand
-        })
-        
-        fig = px.line(df_sim, x='Price', y=['Profit', 'Demand'], markers=True, 
-                      title="價格 vs. 獲利/需求 敏感度分析")
-        fig.add_vline(x=best_price, line_dash="dash", line_color="green", annotation_text="最佳定價")
+        max_idx = int(np.argmax(sim_profit))
+        best_price = float(sim_prices[max_idx])
+        best_profit = float(sim_profit[max_idx])
+
+        st.metric("建議最佳售價", f"€{best_price:.2f}", delta=f"{(best_price-base_price)/base_price:+.1%}")
+        st.metric("預估最大日獲利", f"€{best_profit:,.1f}")
+
+        # Dual-axis plot for readability
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=sim_prices, y=sim_profit, name="Profit (€)", mode="lines+markers"))
+        fig.add_trace(go.Scatter(x=sim_prices, y=sim_demand, name="Demand (units)", mode="lines+markers", yaxis="y2"))
+
+        fig.update_layout(
+            title="Price vs Profit & Demand (Dual Axis)",
+            xaxis_title="Price (€)",
+            yaxis=dict(title="Profit (€)"),
+            yaxis2=dict(title="Demand (units)", overlaying="y", side="right"),
+        )
+        fig.add_vline(x=best_price, line_dash="dash", annotation_text="Best Price")
         st.plotly_chart(fig, use_container_width=True)
-with tab5: 
-    # 假設這是另一個新分頁
+
+# =========================
+# Tab 5: Location (Geospatial)
+# =========================
+with tab5:
     st.header("🗺️ 客戶地理分佈 (Geospatial Insights)")
-    st.markdown("分析 Heilbronn 地區的客戶密度，優化 **門市選址** 與 **物流配送**。")
-
-    # 模擬數據：生成 Heilbronn 附近的座標 (緯度 49.14, 經度 9.21)
-    @st.cache_data
-    def load_geo_data():
-        n_points = 500
-        # 在 Heilbronn 中心點附近隨機生成
-        lat = np.random.normal(49.1427, 0.02, n_points)
-        lon = np.random.normal(9.2109, 0.02, n_points)
-        return pd.DataFrame({'lat': lat, 'lon': lon})
-
-    df_map = load_geo_data()
+    st.markdown("分析目標地區的客戶密度，協助 **門市選址**、**自取點 (Pick-up Point)** 與 **物流配送** 決策。")
 
     col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        # 簡單的地圖
-        st.map(df_map)
-    
+
     with col2:
-        st.info("💡 **商業洞察：**")
-        st.markdown("""
-        * **熱區發現：** 客戶高度集中在市中心東北側。
-        * **行動建議：** 建議在該區域增設 **Lidl Connect 取貨點** 或做為 **生鮮快送 (Quick Commerce)** 的前置倉 (Dark Store)。
-        """)
+        st.subheader("地圖中心點")
+        center_lat = st.number_input("Center Latitude", value=50.8503, format="%.6f")  # default Brussels
+        center_lon = st.number_input("Center Longitude", value=4.3517, format="%.6f")
+        n_points = st.slider("模擬客戶點數", 100, 5000, 500, step=100)
+
+        with st.expander("Methodology & assumptions"):
+            st.markdown(
+                "- 地圖點位為 **Simulated customer pings**（示範用）。\n"
+                "- 正式版可換成：會員地址、外送訂單座標、或區域彙總（zip/census）資料。"
+            )
+
+    with col1:
+        @st.cache_data
+        def load_geo_data(lat0, lon0, n, seed=11):
+            np.random.seed(seed)
+            lat = np.random.normal(lat0, 0.02, n)
+            lon = np.random.normal(lon0, 0.02, n)
+            return pd.DataFrame({"lat": lat, "lon": lon})
+
+        df_map = load_geo_data(center_lat, center_lon, n_points)
+        st.map(df_map)
+
+    st.markdown("---")
+    st.subheader("💡 商業洞察 (示範)")
+    st.info(
+        "你可以把地理頁面變成「選址決策」：\n"
+        "- 熱區（密集客戶）→ 增設自取點 / 快送前置倉（dark store）\n"
+        "- 稀疏區 → 以配送半徑/成本評估是否值得拓點\n\n"
+        "正式版建議：用 hexbin/heatmap 顯示密度，並加入 2–3 個候選點 marker 做比較。"
+    )
