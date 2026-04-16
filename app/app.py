@@ -68,7 +68,7 @@ with tab2:
     # 矩陣轉換
     basket = (df_basket_input.groupby(['InvoiceNo', 'Description'])['Quantity']
               .sum().unstack().reset_index().fillna(0).set_index('InvoiceNo'))
-    basket_sets = basket.applymap(lambda x: 1 if x > 0 else 0)
+    basket_sets = basket.map(lambda x: 1 if x > 0 else 0)
     
     with st.spinner('演算法執行中...'):
         frequent_itemsets = apriori(basket_sets, min_support=0.03, use_colnames=True)
