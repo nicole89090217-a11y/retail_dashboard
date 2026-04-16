@@ -5,99 +5,109 @@ import plotly.express as px
 from mlxtend.frequent_patterns import apriori, association_rules
 import os
 
-# --- 基礎設定與路徑 ---
-st.set_page_config(page_title="Retail Strategy Hub", page_icon="📊", layout="wide")
+# --- 基礎設定 ---
+st.set_page_config(page_title="Retail Strategy Hub V2", page_icon="📊", layout="wide")
 
-# 自動定位數據路徑
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH = os.path.join(BASE_DIR, 'OnlineRetail.csv')
+# --- 自動分類邏輯函數 ---
+def assign_category(description):
+    desc = str(description).upper()
+    if 'BAG' in desc or 'LUNCH BOX' in desc or 'TOTE' in desc:
+        return '包袋與午餐盒 (Bags & Lunch Boxes)'
+    if 'BOTTLE' in desc or 'CUP' in desc or 'MUG' in desc or 'TEAPOT' in desc:
+        return '飲具系列 (Drinkware)'
+    if 'CHRISTMAS' in desc or 'XMAS' in desc or 'STOCKED' in desc:
+        return '聖誕季節裝飾 (Christmas)'
+    if 'LIGHT' in desc or 'CANDLE' in desc or 'LANTERN' in desc:
+        return '燈具與香氛 (Lighting & Candles)'
+    if 'KITCHEN' in desc or 'CUTLERY' in desc or 'CAKE' in desc or 'BOWL' in desc:
+        return '餐廚用品 (Kitchen & Dining)'
+    if 'VINTAGE' in desc or 'RETRO' in desc or 'DECORATION' in desc or 'SIGN' in desc:
+        return '居家裝飾 (Home Decor)'
+    if 'STATIONERY' in desc or 'CARD' in desc or 'PENCIL' in desc or 'NOTEBOOK' in desc:
+        return '文具與卡片 (Stationery)'
+    return '其他生活禮品 (General Gifts)'
 
-# --- 數據載入函數 ---
+# --- 數據載入與清洗 ---
 @st.cache_data
-def load_data():
+def load_and_process_data():
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DATA_PATH = os.path.join(BASE_DIR, 'OnlineRetail.csv')
+    
     # 讀取數據
     df = pd.read_csv(DATA_PATH, encoding='ISO-8859-1')
     
     # 1. 基礎清洗
     df.dropna(subset=['CustomerID', 'Description'], inplace=True)
-    df = df[~df['InvoiceNo'].astype(str).str.contains('C')] # 排除退貨
+    df = df[~df['InvoiceNo'].astype(str).str.contains('C')]
     df = df[df['Quantity'] > 0]
     
-    # 2. 轉換日期與計算營收
-    df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'])
-    df['TotalSum'] = df['Quantity'] * df['UnitPrice']
-    
-    # 3. 排除商業雜訊 (郵資、手續費、銀行費用等)
+    # 2. 排除商業雜訊 (郵資等)
     noise_items = ['POSTAGE', 'DOTCOM POSTAGE', 'SERVICE', 'BANK CHARGES', 'AMAZON FEE']
     df = df[~df['Description'].str.upper().str.contains('|'.join(noise_items), na=False)]
+    
+    # 3. 執行品類歸併
+    df['Category'] = df['Description'].apply(assign_category)
+    
+    # 4. 計算日期與營收
+    df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'])
+    df['TotalSum'] = df['Quantity'] * df['UnitPrice']
     
     return df
 
 # --- 啟動載入 ---
 try:
-    with st.spinner('🚀 正在處理 50 萬筆零售大數據，請稍候...'):
-        df_all = load_data()
+    with st.spinner('🚀 正在進行品類大數據歸併與分析...'):
+        df_all = load_and_process_data()
 except Exception as e:
-    st.error(f"❌ 數據載入失敗！請確認 OnlineRetail.csv 檔案路徑。錯誤：{e}")
+    st.error(f"❌ 數據載入失敗！錯誤原因：{e}")
     st.stop()
 
-# --- 側邊欄 ---
-st.sidebar.title("🛠 策略控制中心")
-country_list = sorted(df_all['Country'].unique())
-selected_country = st.sidebar.selectbox(
-    "選擇分析市場", 
-    country_list, 
-    index=list(country_list).index('United Kingdom') if 'United Kingdom' in country_list else 0
-)
+# --- 主要 UI 介面 ---
+st.title("🛒 Retail Strategy Center: Category Insight")
+st.markdown(f"**數據總量：** `{len(df_all):,}` 筆交易 | **分析維度：** 品類與關聯性")
 
-# 過濾市場數據
+# 側邊欄過濾
+st.sidebar.title("🛠 策略控制面板")
+selected_country = st.sidebar.selectbox("選擇市場", sorted(df_all['Country'].unique()), index=list(sorted(df_all['Country'].unique())).index('United Kingdom'))
 df_filtered = df_all[df_all['Country'] == selected_country]
 
-# --- 主要 UI 介面 ---
-st.title("🛒 Retail Operation Center")
-st.markdown(f"**當前市場： `{selected_country}`** | 數據規模： `{len(df_filtered):,}` 筆交易")
+tab1, tab2, tab3 = st.tabs(["📈 品類表現分析", "🛍️ 購物籃關聯挖掘", "👥 客戶價值 (RFM)"])
 
-tab1, tab2, tab3 = st.tabs(["👥 RFM 客戶分析", "🛍️ 購物籃分析", "📈 市場概況"])
-
-# --- Tab 1: RFM 分析 ---
+# --- Tab 1: 品類表現分析 (新增) ---
 with tab1:
-    st.subheader("客戶價值分佈 (Recency, Frequency, Monetary)")
-    snapshot = df_filtered['InvoiceDate'].max() + pd.Timedelta(days=1)
+    st.subheader(f"📊 {selected_country} 市場品類結構")
     
-    rfm = df_filtered.groupby('CustomerID').agg({
-        'InvoiceDate': lambda x: (snapshot - x.max()).days,
-        'InvoiceNo': 'nunique',
-        'TotalSum': 'sum'
-    }).rename(columns={'InvoiceDate': 'Recency', 'InvoiceNo': 'Frequency', 'TotalSum': 'Monetary'})
+    col_pie, col_bar = st.columns(2)
     
-    fig_rfm = px.scatter(
-        rfm, x="Recency", y="Monetary", size="Frequency", color="Monetary",
-        hover_name=rfm.index, log_y=True,
-        title="RFM 客戶分佈圖 (圓點大小代表消費次數)",
-        labels={'Recency': '距上次消費天數', 'Monetary': '累計消費金額 (log scale)'},
-        color_continuous_scale='Reds'
-    )
-    st.plotly_chart(fig_rfm, use_container_width=True)
+    with col_pie:
+        # 品類營收占比
+        category_revenue = df_filtered.groupby('Category')['TotalSum'].sum().reset_index()
+        fig_pie = px.pie(category_revenue, values='TotalSum', names='Category', 
+                         title='各品類營收貢獻比', hole=0.4,
+                         color_discrete_sequence=px.colors.qualitative.Pastel)
+        st.plotly_chart(fig_pie, use_container_width=True)
+    
+    with col_bar:
+        # 品類銷量排名
+        category_qty = df_filtered.groupby('Category')['Quantity'].sum().reset_index().sort_values('Quantity', ascending=True)
+        fig_bar = px.bar(category_qty, x='Quantity', y='Category', orientation='h',
+                         title='各品類總銷售件數', color='Quantity',
+                         color_continuous_scale='Blues')
+        st.plotly_chart(fig_bar, use_container_width=True)
 
-# --- Tab 2: 購物籃分析 (關鍵優化區) ---
+# --- Tab 2: 購物籃分析 (優化版) ---
 with tab2:
-    st.subheader("關聯銷售挖掘 (Association Rules)")
+    st.subheader("🛍️ 關聯銷售挖掘 (Association Rules)")
     
-    # 限制運算量以確保效能
-    if len(df_filtered) > 15000:
-        st.warning(f"⚠️ 為確保運算效能，系統自動選取 {selected_country} 最新 15,000 筆紀錄。")
-        df_basket_input = df_filtered.sort_values('InvoiceDate', ascending=False).head(15000)
-    else:
-        df_basket_input = df_filtered
-
-    # 建立矩陣
+    # 為了運算效率，取該市場最新數據
+    df_basket_input = df_filtered.sort_values('InvoiceDate', ascending=False).head(15000)
+    
+    # 建立購物籃矩陣
     basket = (df_basket_input.groupby(['InvoiceNo', 'Description'])['Quantity']
               .sum().unstack().reset_index().fillna(0).set_index('InvoiceNo'))
-    
-    # 語法修正：新版 Pandas 使用 .map 取代 .applymap
     basket_sets = basket.map(lambda x: 1 if x > 0 else 0)
     
-    with st.spinner('🧬 正在挖掘關聯規則...'):
+    with st.spinner('🧬 正在挖掘商品間的「真愛」關聯...'):
         frequent_itemsets = apriori(basket_sets, min_support=0.03, use_colnames=True)
         rules = association_rules(frequent_itemsets, metric="lift", min_threshold=1.0)
     
@@ -105,40 +115,38 @@ with tab2:
         rules['A'] = rules['antecedents'].apply(lambda x: ', '.join(list(x)))
         rules['B'] = rules['consequents'].apply(lambda x: ', '.join(list(x)))
         
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            sel_a = st.selectbox("1️⃣ 選擇領頭商品 (Driver Item)：", sorted(rules['A'].unique()))
-            top_rules = rules[rules['A'] == sel_a].sort_values('lift', ascending=False).head(5)
-            
-            st.metric("最強關聯商品", top_rules['B'].iloc[0])
-            st.metric("搭配購買提升率 (Lift)", f"{top_rules['lift'].iloc[0]:.2f}x")
-
-        with col2:
-            fig_rules = px.bar(
-                top_rules, x="lift", y="B", orientation='h',
-                title=f"買了 '{sel_a}' 後，最常順手買的 Top 5 商品",
-                labels={'lift': '推薦權重 (Lift)', 'B': '建議加購商品'},
-                color='lift', color_continuous_scale='Viridis'
-            )
+        sel_a = st.selectbox("1️⃣ 搜尋領頭商品 (Driver)：", sorted(rules['A'].unique()))
+        top_rules = rules[rules['A'] == sel_a].sort_values('lift', ascending=False).head(5)
+        
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            st.info(f"**分析結果：**\n\n當客戶購買了 **{sel_a}**，他們極有可能也會對右側圖表中的商品感興趣。")
+            st.metric("最高提升倍率 (Lift)", f"{top_rules['lift'].iloc[0]:.2f}x")
+        
+        with c2:
+            fig_rules = px.bar(top_rules, x='lift', y='B', orientation='h',
+                               title=f"建議搭配 '{sel_a}' 銷售的商品",
+                               labels={'lift': '購買機率提升倍率', 'B': '建議加購品項'},
+                               color='lift', color_continuous_scale='Viridis')
             st.plotly_chart(fig_rules, use_container_width=True)
-            
-        st.info("💡 **商業建議：** Lift 越高代表關聯性越強，建議將這些商品擺放在相鄰貨架或作為組合包銷售。")
     else:
-        st.write("🔍 該市場目前尚無顯著的關聯規則，請嘗試更換市場或降低分析門檻。")
+        st.warning("🔍 該市場目前樣本數不足以產生顯著關聯，請嘗試切換至 United Kingdom。")
 
-# --- Tab 3: 市場概況 ---
+# --- Tab 3: RFM 客戶分析 ---
 with tab3:
-    st.subheader("營運關鍵指標 (KPIs)")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("總訂單數", f"{df_filtered['InvoiceNo'].nunique():,}")
-    c2.metric("總營收", f"£{df_filtered['TotalSum'].sum():,.0f}")
-    c3.metric("平均客單價", f"£{df_filtered['TotalSum'].sum() / df_filtered['InvoiceNo'].nunique():,.2f}")
+    st.subheader("👥 客戶貢獻度分佈")
+    snapshot = df_filtered['InvoiceDate'].max() + pd.Timedelta(days=1)
+    rfm = df_filtered.groupby('CustomerID').agg({
+        'InvoiceDate': lambda x: (snapshot - x.max()).days,
+        'InvoiceNo': 'nunique',
+        'TotalSum': 'sum'
+    }).rename(columns={'InvoiceDate': 'Recency', 'InvoiceNo': 'Frequency', 'TotalSum': 'Monetary'})
     
-    # 營收趨勢
-    df_filtered['Month'] = df_filtered['InvoiceDate'].dt.to_period('M').astype(str)
-    trend = df_filtered.groupby('Month')['TotalSum'].sum().reset_index()
-    fig_trend = px.line(trend, x='Month', y='TotalSum', title="月營收成長趨勢圖", markers=True)
-    st.plotly_chart(fig_trend, use_container_width=True)
+    fig_rfm = px.scatter(rfm, x="Recency", y="Monetary", size="Frequency", color="Monetary",
+                         hover_name=rfm.index, log_y=True,
+                         title="RFM 客戶分佈圖", labels={'Recency': '最後一次購買至今(天)'},
+                         color_continuous_scale='Purples')
+    st.plotly_chart(fig_rfm, use_container_width=True)
 
 st.sidebar.markdown("---")
-st.sidebar.info("Dashboard engineered by Yi-Han.")
+st.sidebar.info("Dashboard engineered by Yi-Han.\n\n此版本已整合「品類歸併」邏輯。")
