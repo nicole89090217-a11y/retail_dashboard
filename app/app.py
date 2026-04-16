@@ -6,108 +6,102 @@ from mlxtend.frequent_patterns import apriori, association_rules
 import os
 
 # --- 基礎設定 ---
-st.set_page_config(page_title="Retail Strategy Hub V2", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Retail Insights Center", page_icon="📈", layout="wide")
 
-# --- 自動分類邏輯函數 ---
-def assign_category(description):
+# --- 核心優化：深度分類邏輯 ---
+def assigned_clean_category(description):
     desc = str(description).upper()
-    if 'BAG' in desc or 'LUNCH BOX' in desc or 'TOTE' in desc:
-        return '包袋與午餐盒 (Bags & Lunch Boxes)'
-    if 'BOTTLE' in desc or 'CUP' in desc or 'MUG' in desc or 'TEAPOT' in desc:
+    # 建立更寬廣的歸併邏輯，減少類別數量
+    if any(word in desc for word in ['BAG', 'TOTE', 'LUNCH BOX', 'CASE', 'BACKPACK']):
+        return '包袋收納 (Bags & Cases)'
+    if any(word in desc for word in ['CUP', 'MUG', 'BOTTLE', 'GLASS', 'TEAPOT', 'FLASK']):
         return '飲具系列 (Drinkware)'
-    if 'CHRISTMAS' in desc or 'XMAS' in desc or 'STOCKED' in desc:
-        return '聖誕季節裝飾 (Christmas)'
-    if 'LIGHT' in desc or 'CANDLE' in desc or 'LANTERN' in desc:
-        return '燈具與香氛 (Lighting & Candles)'
-    if 'KITCHEN' in desc or 'CUTLERY' in desc or 'CAKE' in desc or 'BOWL' in desc:
-        return '餐廚用品 (Kitchen & Dining)'
-    if 'VINTAGE' in desc or 'RETRO' in desc or 'DECORATION' in desc or 'SIGN' in desc:
-        return '居家裝飾 (Home Decor)'
-    if 'STATIONERY' in desc or 'CARD' in desc or 'PENCIL' in desc or 'NOTEBOOK' in desc:
-        return '文具與卡片 (Stationery)'
-    return '其他生活禮品 (General Gifts)'
+    if any(word in desc for word in ['CHRISTMAS', 'XMAS', 'STOCKED', 'SNOW']):
+        return '季節節慶 (Seasonal)'
+    if any(word in desc for word in ['CANDLE', 'LIGHT', 'LANTERN', 'HOLDER', 'FAIRY']):
+        return '燈具香氛 (Home Fragrance)'
+    if any(word in desc for word in ['KITCHEN', 'DINING', 'BOWL', 'PLATE', 'CUTLERY', 'CAKE']):
+        return '餐廚用品 (Kitchen)'
+    if any(word in desc for word in ['DECORATION', 'ORNAMENT', 'VINTAGE', 'SIGN', 'FRAME', 'WALL']):
+        return '居家風格 (Home Decor)'
+    return '其他禮品 (General Gifts)'
 
 # --- 數據載入與清洗 ---
 @st.cache_data
-def load_and_process_data():
+def load_and_clean_data():
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DATA_PATH = os.path.join(BASE_DIR, 'OnlineRetail.csv')
-    
-    # 讀取數據
     df = pd.read_csv(DATA_PATH, encoding='ISO-8859-1')
     
-    # 1. 基礎清洗
-    df.dropna(subset=['CustomerID', 'Description'], inplace=True)
+    # 基本過濾
+    df.dropna(subset=['Description', 'CustomerID'], inplace=True)
     df = df[~df['InvoiceNo'].astype(str).str.contains('C')]
     df = df[df['Quantity'] > 0]
     
-    # 2. 排除商業雜訊 (郵資等)
-    noise_items = ['POSTAGE', 'DOTCOM POSTAGE', 'SERVICE', 'BANK CHARGES', 'AMAZON FEE']
-    df = df[~df['Description'].str.upper().str.contains('|'.join(noise_items), na=False)]
+    # 排除雜訊
+    noise = ['POSTAGE', 'DOTCOM POSTAGE', 'SERVICE', 'BANK CHARGES', 'AMAZON FEE', 'SAMPLES']
+    df = df[~df['Description'].str.upper().str.contains('|'.join(noise), na=False)]
     
-    # 3. 執行品類歸併
-    df['Category'] = df['Description'].apply(assign_category)
+    # 縮短商品名稱：只取前 25 個字，並刪除末尾空格，避免圖表過亂
+    df['Short_Name'] = df['Description'].str[:25].str.strip()
     
-    # 4. 計算日期與營收
+    # 套用深度分類
+    df['Category'] = df['Description'].apply(assigned_clean_category)
+    
     df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'])
     df['TotalSum'] = df['Quantity'] * df['UnitPrice']
-    
     return df
 
-# --- 啟動載入 ---
 try:
-    with st.spinner('🚀 正在進行品類大數據歸併與分析...'):
-        df_all = load_and_process_data()
+    with st.spinner('✨ 正在精煉零售數據...'):
+        df_all = load_and_clean_data()
 except Exception as e:
-    st.error(f"❌ 數據載入失敗！錯誤原因：{e}")
+    st.error(f"❌ 數據載入失敗: {e}")
     st.stop()
 
-# --- 主要 UI 介面 ---
-st.title("🛒 Retail Strategy Center: Category Insight")
-st.markdown(f"**數據總量：** `{len(df_all):,}` 筆交易 | **分析維度：** 品類與關聯性")
-
-# 側邊欄過濾
-st.sidebar.title("🛠 策略控制面板")
+# --- 側邊欄 ---
+st.sidebar.title("💎 精煉控制台")
 selected_country = st.sidebar.selectbox("選擇市場", sorted(df_all['Country'].unique()), index=list(sorted(df_all['Country'].unique())).index('United Kingdom'))
 df_filtered = df_all[df_all['Country'] == selected_country]
 
-tab1, tab2, tab3 = st.tabs(["📈 品類表現分析", "🛍️ 購物籃關聯挖掘", "👥 客戶價值 (RFM)"])
+# --- 主要 UI ---
+st.title("📊 Retail Strategy Dashboard")
+st.markdown(f"**市場分析：** `{selected_country}` | **數據日期範圍：** `{df_filtered['InvoiceDate'].min().date()}` 至 `{df_filtered['InvoiceDate'].max().date()}`")
 
-# --- Tab 1: 品類表現分析 (新增) ---
+tab1, tab2, tab3 = st.tabs(["💎 品類表現", "🔗 關聯分析", "📈 營運指標"])
+
 with tab1:
-    st.subheader(f"📊 {selected_country} 市場品類結構")
-    
-    col_pie, col_bar = st.columns(2)
-    
-    with col_pie:
-        # 品類營收占比
-        category_revenue = df_filtered.groupby('Category')['TotalSum'].sum().reset_index()
-        fig_pie = px.pie(category_revenue, values='TotalSum', names='Category', 
-                         title='各品類營收貢獻比', hole=0.4,
-                         color_discrete_sequence=px.colors.qualitative.Pastel)
+    col1, col2 = st.columns([1, 1.2])
+    with col1:
+        # 品類營收
+        cat_revenue = df_filtered.groupby('Category')['TotalSum'].sum().reset_index()
+        fig_pie = px.pie(cat_revenue, values='TotalSum', names='Category', 
+                         hole=0.5, title="各類別營收貢獻",
+                         color_discrete_sequence=px.colors.qualitative.Safe)
+        fig_pie.update_traces(textposition='inside', textinfo='percent+label')
         st.plotly_chart(fig_pie, use_container_width=True)
     
-    with col_bar:
-        # 品類銷量排名
-        category_qty = df_filtered.groupby('Category')['Quantity'].sum().reset_index().sort_values('Quantity', ascending=True)
-        fig_bar = px.bar(category_qty, x='Quantity', y='Category', orientation='h',
-                         title='各品類總銷售件數', color='Quantity',
-                         color_continuous_scale='Blues')
+    with col2:
+        # 熱銷品 Top 10 (使用縮短後的名稱)
+        top_items = df_filtered.groupby('Short_Name')['Quantity'].sum().nlargest(10).reset_index().sort_values('Quantity')
+        fig_bar = px.bar(top_items, x='Quantity', y='Short_Name', orientation='h',
+                         title="本市場熱銷 Top 10 商品",
+                         labels={'Short_Name': '商品名稱', 'Quantity': '銷量'},
+                         color='Quantity', color_continuous_scale='Blues')
+        fig_bar.update_layout(yaxis={'categoryorder':'total ascending'})
         st.plotly_chart(fig_bar, use_container_width=True)
 
-# --- Tab 2: 購物籃分析 (優化版) ---
 with tab2:
-    st.subheader("🛍️ 關聯銷售挖掘 (Association Rules)")
+    st.subheader("🛍️ 購物籃深度關聯")
+    # 增加運算筆數至 20,000 提高準確度
+    df_basket_input = df_filtered.sort_values('InvoiceDate', ascending=False).head(20000)
     
-    # 為了運算效率，取該市場最新數據
-    df_basket_input = df_filtered.sort_values('InvoiceDate', ascending=False).head(15000)
-    
-    # 建立購物籃矩陣
-    basket = (df_basket_input.groupby(['InvoiceNo', 'Description'])['Quantity']
+    # 建立矩陣
+    basket = (df_basket_input.groupby(['InvoiceNo', 'Short_Name'])['Quantity']
               .sum().unstack().reset_index().fillna(0).set_index('InvoiceNo'))
     basket_sets = basket.map(lambda x: 1 if x > 0 else 0)
     
-    with st.spinner('🧬 正在挖掘商品間的「真愛」關聯...'):
+    with st.spinner('正在計算關聯規則...'):
         frequent_itemsets = apriori(basket_sets, min_support=0.03, use_colnames=True)
         rules = association_rules(frequent_itemsets, metric="lift", min_threshold=1.0)
     
@@ -115,38 +109,36 @@ with tab2:
         rules['A'] = rules['antecedents'].apply(lambda x: ', '.join(list(x)))
         rules['B'] = rules['consequents'].apply(lambda x: ', '.join(list(x)))
         
-        sel_a = st.selectbox("1️⃣ 搜尋領頭商品 (Driver)：", sorted(rules['A'].unique()))
+        sel_a = st.selectbox("請選擇一個商品，查看其最強搭配：", sorted(rules['A'].unique()))
         top_rules = rules[rules['A'] == sel_a].sort_values('lift', ascending=False).head(5)
         
         c1, c2 = st.columns([1, 2])
         with c1:
-            st.info(f"**分析結果：**\n\n當客戶購買了 **{sel_a}**，他們極有可能也會對右側圖表中的商品感興趣。")
-            st.metric("最高提升倍率 (Lift)", f"{top_rules['lift'].iloc[0]:.2f}x")
+            best_match = top_rules.iloc[0]['B']
+            st.success(f"**最佳搭配建議：**\n\n購買 **{sel_a}** 的客戶，極高機率也會購買 **{best_match}**。")
+            st.metric("提升率 (Lift)", f"{top_rules.iloc[0]['lift']:.2f}x")
         
         with c2:
             fig_rules = px.bar(top_rules, x='lift', y='B', orientation='h',
-                               title=f"建議搭配 '{sel_a}' 銷售的商品",
-                               labels={'lift': '購買機率提升倍率', 'B': '建議加購品項'},
-                               color='lift', color_continuous_scale='Viridis')
+                               title=f"與 '{sel_a}' 的關聯度排行",
+                               labels={'lift': '關聯強度 (Lift)', 'B': '建議加購品項'},
+                               color='lift', color_continuous_scale='GnBu')
             st.plotly_chart(fig_rules, use_container_width=True)
     else:
-        st.warning("🔍 該市場目前樣本數不足以產生顯著關聯，請嘗試切換至 United Kingdom。")
+        st.info("💡 該區域目前交易關聯較為分散，建議查看 UK 市場以獲得更明顯的分析結果。")
 
-# --- Tab 3: RFM 客戶分析 ---
 with tab3:
-    st.subheader("👥 客戶貢獻度分佈")
-    snapshot = df_filtered['InvoiceDate'].max() + pd.Timedelta(days=1)
-    rfm = df_filtered.groupby('CustomerID').agg({
-        'InvoiceDate': lambda x: (snapshot - x.max()).days,
-        'InvoiceNo': 'nunique',
-        'TotalSum': 'sum'
-    }).rename(columns={'InvoiceDate': 'Recency', 'InvoiceNo': 'Frequency', 'TotalSum': 'Monetary'})
+    # 簡單乾淨的 KPI 呈現
+    kpi1, kpi2, kpi3 = st.columns(3)
+    kpi1.metric("訂單總量", f"{df_filtered['InvoiceNo'].nunique():,}")
+    kpi2.metric("總銷售營收", f"£{df_filtered['TotalSum'].sum():,.0f}")
+    kpi3.metric("活躍客戶數", f"{df_filtered['CustomerID'].nunique():,}")
     
-    fig_rfm = px.scatter(rfm, x="Recency", y="Monetary", size="Frequency", color="Monetary",
-                         hover_name=rfm.index, log_y=True,
-                         title="RFM 客戶分佈圖", labels={'Recency': '最後一次購買至今(天)'},
-                         color_continuous_scale='Purples')
-    st.plotly_chart(fig_rfm, use_container_width=True)
+    # 營收走勢
+    df_filtered['Month'] = df_filtered['InvoiceDate'].dt.to_period('M').astype(str)
+    monthly_sales = df_filtered.groupby('Month')['TotalSum'].sum().reset_index()
+    fig_line = px.line(monthly_sales, x='Month', y='TotalSum', title="營收月走勢分析", markers=True)
+    st.plotly_chart(fig_line, use_container_width=True)
 
 st.sidebar.markdown("---")
-st.sidebar.info("Dashboard engineered by Yi-Han.\n\n此版本已整合「品類歸併」邏輯。")
+st.sidebar.caption("Dashboard Optimized by Yi-Han")
