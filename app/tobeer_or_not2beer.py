@@ -7,7 +7,7 @@ import warnings
 
 # --- 0. 基礎設置與環境淨化 ---
 warnings.filterwarnings("ignore")
-st.set_option('deprecation.showPyplotGlobalUse', False)
+#st.set_option('deprecation.showPyplotGlobalUse', False)
 st.set_page_config(page_title="Retail Strategy Hub", page_icon="🍺", layout="wide")
 
 # 強制隱藏 UI 雜訊
