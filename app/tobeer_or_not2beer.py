@@ -92,7 +92,21 @@ with tab2:
     # 計算安全庫存
     inv['Safety_Stock'] = (buffer_val * inv['Std_Dev'] * np.sqrt(7)).round(1) # 以 7 天 Lead time 為例
     
-    target_inv = inv.loc[['Bottled Beer', 'Potato Chips', 'Sausage']].reset_index()
+    targets = ['Bottled Beer', 'Potato Chips', 'Sausage', 'Whole Milk']
+
+# 找出數據中實際存在的品項（避免 KeyError）
+existing_targets = [item for item in targets if item in inv.index]
+
+if existing_targets:
+    target_inv = inv.loc[existing_targets].reset_index()
+    
+    # 這裡放原本的 fig_inv 繪圖代碼
+    fig_inv = px.bar(target_inv, x='Item', y=['Daily_Avg', 'Safety_Stock'],
+                    title=f"前置時間 {lead_time} 天下的安全庫存組成",
+                    barmode='group', color_discrete_sequence=['#457b9d', '#e63946'])
+    st.plotly_chart(fig_inv, use_container_width=True)
+else:
+    st.warning("⚠️ 在數據中找不到指定的品項（Bottled Beer, Potato Chips 等），請檢查數據載入狀況。")
     fig_inv = px.bar(target_inv, x='itemDescription', y=['Daily_Avg', 'Safety_Stock'], 
                      title="需求量 vs. 補貨 Buffer", barmode='group', labels={'value': '數量'})
     st.plotly_chart(fig_inv, use_container_width=True)
