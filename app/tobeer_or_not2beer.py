@@ -48,7 +48,21 @@ df_all = load_and_clean_data() if 'load_and_clean_data' in locals() else load_an
 # --- 2. 主要 UI 與分頁 ---
 st.title("📊 Strategic Retail Operation Center")
 tab1, tab2, tab3, tab4 = st.tabs(["👥 客戶精準行銷 (RFM)", "🚚 需求預測 (Supply Chain)", "🛍️ 交叉銷售 (MBA)", "📉 智慧定價 (Elasticity)"])
+# --- 找到這一段並確保它在最前面 ---
+st.sidebar.title("💎 策略控制中心")
+# 確保這行在所有的 tab 邏輯執行之前
+lead_time = st.sidebar.select_slider("物流補貨天數 (Buffer)", options=[1, 3, 5, 7, 10, 14], value=5)
 
+# --- 然後才是 Tabs 的定義 ---
+tab1, tab2, tab3, tab4 = st.tabs(["👥 客戶精準行銷 (RFM)", "🚚 需求預測 (Supply Chain)", "🛍️ 交叉銷售 (MBA)", "📉 智慧定價 (Elasticity)"])
+
+# --- 在 Tab 2 使用時就不會報錯了 ---
+with tab2:
+    st.subheader("📦 供應鏈補貨 Buffer 管理")
+    # ... 其他計算代碼 ...
+    fig_inv = px.bar(target_inv, x='itemDescription', y=['Daily_Avg', 'Safety_Stock'], 
+                     title=f"前置時間 {lead_time} 天下的安全庫存組成", # 現在 lead_time 確定有值了
+                     barmode='group')
 # --- 模組 1: 客戶精準行銷 (RFM) ---
 with tab1:
     st.subheader("🎯 客戶分群與流失預警")
