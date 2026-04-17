@@ -112,13 +112,13 @@ with tab3:
         # 判定邏輯
         if ma <= 0.12 and mb >= 0.20:
             st.error(" **建議策略：Loss Leader (引流策略)**")
-            reason = f"診斷：{sel_a} 毛利極低 ({ma*100:.0f}%)，適合作為引流品項帶動高毛利商品 {sel_b}。"
+            reason = f"{sel_a} 毛利極低 ({ma*100:.0f}%)，適合作為引流品項帶動高毛利商品 {sel_b}。"
         elif top_rule['lift'] > 1.3:
             st.success(" **建議策略：Bundle (綑綁銷售)**")
             reason = f"診斷：{sel_a} 與 {sel_b} 關聯極強 (Lift: {top_rule['lift']:.2f})，適合推出組合包。"
         else:
             st.info(" **建議策略：Cross-Sell (交叉銷售)**")
-            reason = "診斷：建議於貨架鄰近處陳列。"
+            reason = "建議於貨架鄰近處陳列。"
 
         st.markdown(f"""<div style="background-color:rgba(100,100,100,0.1); padding:15px; border-radius:10px; border-left: 5px solid #ccc;"><b>策略診斷：</b>{reason}</div>""", unsafe_allow_html=True)
         st.plotly_chart(px.bar(rules[rules['A'] == sel_a].head(5), x='lift', y='B', orientation='h', color='lift'), width='stretch')
