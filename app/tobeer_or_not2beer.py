@@ -9,85 +9,102 @@ import warnings
 warnings.filterwarnings("ignore")
 st.set_page_config(page_title="Strategic Retail Center", page_icon="📊", layout="wide")
 
-# --- 1. 數據載入與「毛利結構」定義 ---
+# --- 1. 數據載入與商業邏輯定義 ---
 @st.cache_data
-def load_data_with_margins():
+def load_data_pro():
     url = "https://raw.githubusercontent.com/amankharwal/Website-data/master/Groceries_dataset.csv"
     df = pd.read_csv(url)
     df['Date'] = pd.to_datetime(df['Date'], dayfirst=True)
+    
+    # 數據正名與標準化
+    df['itemDescription'] = df['itemDescription'].replace({'salty snack': 'Potato Chips'})
     df['Item'] = df['itemDescription'].str.strip().str.title()
     
-    # 【關鍵：毛利矩陣】定義不同品類的利潤空間
-    # 啤酒通常作為引流 (低毛利)，肉類/零食作為獲利 (高毛利)
+    # 毛利矩陣：決定 Loss Leader 還是 Bundle
     margin_config = {
-        'Bottled Beer': 0.10,   # 10% (低毛利，帶路雞預選)
-        'Canned Beer': 0.08,
-        'Sausage': 0.35,        # 35% (獲利款)
-        'Whole Milk': 0.05,     # 5% (民生必需品)
-        'Yogurt': 0.25,
-        'Soda': 0.40,           # 40% (高毛利)
-        'Pastry': 0.30
+        'Bottled Beer': 0.10, 'Canned Beer': 0.08, 'Potato Chips': 0.45,
+        'Sausage': 0.35, 'Whole Milk': 0.05, 'Soda': 0.40
     }
     
     df['Margin'] = df['Item'].map(margin_config).fillna(0.20)
-    df['Price'] = df['Item'].map({'Bottled Beer': 18, 'Sausage': 12, 'Whole Milk': 3.5}).fillna(7.0)
+    df['Price'] = df['Item'].map({'Bottled Beer': 18, 'Potato Chips': 5, 'Whole Milk': 3.5}).fillna(7.0)
     df['Profit'] = df['Price'] * df['Margin']
     
     return df, margin_config
 
-df_all, margin_lookup = load_data_with_margins()
+df_all, margin_lookup = load_data_pro()
 
-# (側邊欄與前兩個 Tab 保持不變，重點看 Tab 3)
+# --- 2. 側邊欄定義 ---
+st.sidebar.title("💎 營運策略控制台")
+lead_time = st.sidebar.select_slider("物流前置時間 (Lead Time)", options=[1, 3, 5, 7, 10, 14], value=5)
+buffer_factor = st.sidebar.slider("安全庫存係數 (Buffer)", 1.0, 3.0, 1.65)
 
-# --- Tab 3: 購物籃分析 (新增毛利策略判定) ---
-with st.container(): # 這裡假設是在 Tab 3 的內容中
-    st.subheader("🛒 購物籃交叉銷售策略 (基於關聯性與毛利)")
+# --- 3. 主要 UI 分頁 ---
+st.title("🚀 Strategic Retail Executive Dashboard")
+tab1, tab2, tab3, tab4 = st.tabs(["👥 RFM 行銷", "📦 供應鏈補貨", "🛍️ 購物籃策略", "📈 智慧定價"])
+
+# --- Tab 1: RFM (指標對齊截圖) ---
+with tab1:
+    snapshot = df_all['Date'].max() + pd.Timedelta(days=1)
+    rfm = df_all.groupby('Member_number').agg({'Date': lambda x: (snapshot - x.max()).days, 'Member_number': 'count', 'Price': 'sum'}).rename(columns={'Date': 'Recency', 'Member_number': 'Frequency', 'Price': 'Monetary'})
     
-    # 建立 MBA 矩陣
-    basket_bool = df_all.head(10000).groupby(['Member_number', 'Item'])['Item'].count().unstack().reset_index().fillna(0).set_index('Member_number') > 0
-    frequent_itemsets = apriori(basket_bool.astype(bool), min_support=0.005, use_colnames=True)
-    rules = association_rules(frequent_itemsets, metric="lift", min_threshold=1.0)
+    def get_seg(x):
+        if x['Monetary'] > rfm['Monetary'].quantile(0.8) and x['Frequency'] > rfm['Frequency'].quantile(0.8): return 'VIP'
+        if x['Recency'] > 60 and x['Monetary'] > rfm['Monetary'].median(): return 'At Risk'
+        return 'Standard'
+    
+    rfm['Segment'] = rfm.apply(get_seg, axis=1)
+    at_risk = rfm[rfm['Segment'] == 'At Risk']
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("流失預警客戶 (At Risk)", f"{len(at_risk)} 人")
+    c2.metric("潛在流失總金額", f"€{at_risk['Monetary'].sum():,.0f}")
+    c3.metric("流失前平均頻次", f"{at_risk['Frequency'].mean():.1f} 次")
+    
+    fig_rfm = px.scatter(rfm, x="Recency", y="Monetary", color="Segment", size="Frequency", title="RFM 價值矩陣")
+    st.plotly_chart(fig_rfm, width='stretch') # 已修正語法
+
+# --- Tab 3: 購物籃策略 (毛利判定版) ---
+with tab3:
+    st.subheader("🛒 購物籃交叉銷售策略判定")
+    basket = df_all.head(10000).groupby(['Member_number', 'Item'])['Item'].count().unstack().reset_index().fillna(0).set_index('Member_number')
+    basket_bool = (basket > 0).astype(bool)
+    
+    f_sets = apriori(basket_bool, min_support=0.005, use_colnames=True)
+    rules = association_rules(f_sets, metric="lift", min_threshold=1.0)
     
     if not rules.empty:
         rules['A'] = rules['antecedents'].apply(lambda x: list(x)[0])
         rules['B'] = rules['consequents'].apply(lambda x: list(x)[0])
         
         sel_a = st.selectbox("選擇 Driver 商品 (A)：", sorted(rules['A'].unique()), index=0)
-        
-        # 抓取該規則的數據
         top_rule = rules[rules['A'] == sel_a].sort_values('lift', ascending=False).iloc[0]
         sel_b = top_rule['B']
         
-        # --- 核心判定邏輯：毛利判定 ---
-        margin_a = margin_lookup.get(sel_a, 0.20)
-        margin_b = margin_lookup.get(sel_b, 0.20)
+        # 毛利決策邏輯
+        m_a, m_b = margin_lookup.get(sel_a, 0.20), margin_lookup.get(sel_b, 0.20)
         
-        # 1. 如果 Driver (A) 毛利低於 12% 且搭配商品 (B) 毛利高於 20%
-        if margin_a <= 0.12 and margin_b >= 0.20:
-            strategy = "Loss Leader (引流策略)"
-            color = "inverse"
-            reason = f"商品 {sel_a} 毛利低 ({margin_a*100:.0f}%)，但能顯著帶動高毛利商品 {sel_b} ({margin_b*100:.0f}%) 的銷售。"
-        # 2. 如果兩者毛利皆不低，且 Lift 強
+        if m_a <= 0.12 and m_b >= 0.20:
+            strategy, style, reason = "Loss Leader (引流)", "🚨", f"商品 {sel_a} 毛利低，但能帶動高毛利商品 {sel_b} 的銷售。"
+            st.error(f"**{style} 策略建議：{strategy}**")
         elif top_rule['lift'] > 2.0:
-            strategy = "Bundle (綑綁銷售)"
-            color = "normal"
-            reason = f"兩者毛利穩定且具備極強關聯 (Lift: {top_rule['lift']:.2f})，適合打包銷售提升客單價。"
+            strategy, style, reason = "Bundle (綑綁)", "💎", f"兩者具備極強關聯 (Lift: {top_rule['lift']:.2f})，適合組合銷售。"
+            st.success(f"**{style} 策略建議：{strategy}**")
         else:
-            strategy = "Cross-Sell (交叉銷售)"
-            color = "off"
-            reason = "建議在結帳頁面或貨架鄰近處進行一般陳列推薦。"
+            strategy, style, reason = "Cross-Sell (交叉銷售)", "💡", "建議進行一般陳列推薦。"
+            st.info(f"**{style} 策略建議：{strategy}**")
 
-        # 顯示結果
-        m1, m2, m3 = st.columns(3)
-        m1.metric("建議策略", strategy)
-        m2.metric("搭配商品 (B)", sel_b)
-        m3.metric("提升率 (Lift)", f"{top_rule['lift']:.2f}x")
+        st.markdown(f"""<div style="background-color:rgba(100,100,100,0.1); padding:15px; border-radius:10px;"><b>策略診斷：</b>{reason}</div>""", unsafe_allow_html=True)
         
-        st.help(f"**策略診斷：** {reason}")
-        
-        # 繪圖
-        fig_mba = px.bar(rules[rules['A'] == sel_a].head(5), x='lift', y='B', color='lift',
-                         orientation='h', title=f"與 {sel_a} 關聯最強的 Top 5 品項")
-        st.plotly_chart(fig_mba, use_container_width=True)
+        fig_mba = px.bar(rules[rules['A'] == sel_a].head(5), x='lift', y='B', orientation='h', color='lift')
+        st.plotly_chart(fig_mba, width='stretch') # 已修正語法
 
-# (其餘 Tab 4 價格彈性代碼...)
+# --- 其餘 Tab 2 & 4 修正 ---
+with tab2:
+    # ... 供應鏈邏輯 ...
+    st.plotly_chart(px.bar(df_all.head(10), x='Item', y='Price'), width='stretch') # 已修正語法
+with tab4:
+    # ... 定價邏輯 ...
+    st.plotly_chart(px.line(x=[1,2,3], y=[1,2,3]), width='stretch') # 已修正語法
+
+st.sidebar.caption("Dashboard Optimized v6.0")
